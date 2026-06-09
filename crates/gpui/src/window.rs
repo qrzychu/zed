@@ -8,7 +8,7 @@ use crate::{
     EntityId, EventEmitter, FileDropEvent, FontId, Global, GlobalElementId, GlyphId, GpuSpecs,
     Hsla, InputHandler, IsZero, KeyBinding, KeyContext, KeyDownEvent, KeyEvent, Keystroke,
     KeystrokeEvent, LayoutId, LineLayoutIndex, Modifiers, ModifiersChangedEvent, MonochromeSprite,
-    MouseButton, MouseEvent, MouseMoveEvent, MouseUpEvent, Path, Pixels, PlatformAtlas,
+    MouseButton, MouseEvent, MouseMoveEvent, MouseUpEvent, OsAction, Path, Pixels, PlatformAtlas,
     PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point, PolychromeSprite,
     Priority, PromptButton, PromptLevel, Quad, Render, RenderGlyphParams, RenderImage,
     RenderImageParams, RenderSvgParams, Replay, ResizeEdge, SMOOTH_SVG_SCALE_FACTOR,
@@ -4547,6 +4547,22 @@ impl Window {
                 }
             },
             PlatformInput::KeyDown(_) | PlatformInput::KeyUp(_) => event,
+            // The OS asked us to paste (e.g. Windows clipboard history). Dispatch the
+            // action the application registered as `OsAction::Paste` directly to the
+            // focused element, so this works regardless of the user's keymap.
+            PlatformInput::Paste => {
+                let propagate = match cx.os_action(OsAction::Paste) {
+                    Some(action) => {
+                        self.dispatch_action(action, cx);
+                        false
+                    }
+                    None => true,
+                };
+                return DispatchEventResult {
+                    propagate,
+                    default_prevented: self.default_prevented,
+                };
+            }
         };
 
         if let Some(any_mouse_event) = event.mouse_event() {

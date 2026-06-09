@@ -670,6 +670,11 @@ pub enum PlatformInput {
     Pinch(PinchEvent),
     /// Files were dragged and dropped onto the window.
     FileDrop(FileDropEvent),
+    /// The operating system requested a paste (e.g. picking an item from the
+    /// Windows clipboard history, `Win+V`). This is dispatched as the
+    /// application's [`crate::OsAction::Paste`] action so it stays independent
+    /// of the user's keymap.
+    Paste,
 }
 
 impl PlatformInput {
@@ -686,6 +691,7 @@ impl PlatformInput {
             PlatformInput::ScrollWheel(event) => Some(event),
             PlatformInput::Pinch(event) => Some(event),
             PlatformInput::FileDrop(event) => Some(event),
+            PlatformInput::Paste => None,
         }
     }
 
@@ -702,6 +708,7 @@ impl PlatformInput {
             PlatformInput::ScrollWheel(_) => None,
             PlatformInput::Pinch(_) => None,
             PlatformInput::FileDrop(_) => None,
+            PlatformInput::Paste => None,
         }
     }
 }

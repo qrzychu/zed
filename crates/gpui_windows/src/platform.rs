@@ -398,9 +398,12 @@ impl Platform for WindowsPlatform {
 
     fn run(&self, on_finish_launching: Box<dyn 'static + FnOnce()>) {
         on_finish_launching();
-        if !self.headless {
+        let clipboard_history_paste_hook = if self.headless {
+            None
+        } else {
             self.begin_vsync_thread();
-        }
+            ClipboardHistoryPasteHook::install()
+        };
 
         let mut msg = MSG::default();
         unsafe {
@@ -411,6 +414,10 @@ impl Platform for WindowsPlatform {
                 }
             }
         }
+
+        // `ExitProcess` below never returns, so unhook explicitly rather than
+        // relying on drop order.
+        drop(clipboard_history_paste_hook);
 
         self.inner
             .with_callback(|callbacks| &callbacks.quit, |callback| callback());

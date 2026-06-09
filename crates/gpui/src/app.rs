@@ -44,8 +44,8 @@ use crate::{
     Action, ActionBuildError, ActionRegistry, Any, AnyView, AnyWindowHandle, AppContext, Arena,
     ArenaBox, Asset, AssetSource, BackgroundExecutor, Bounds, ClipboardItem, CursorStyle,
     DispatchPhase, DisplayId, EventEmitter, FocusHandle, FocusMap, ForegroundExecutor, Global,
-    KeyBinding, KeyContext, Keymap, Keystroke, LayoutId, Menu, MenuItem, OwnedMenu,
-    PathPromptOptions, Pixels, Platform, PlatformDisplay, PlatformKeyboardLayout,
+    KeyBinding, KeyContext, Keymap, Keystroke, LayoutId, Menu, MenuItem, OsAction, OwnedMenu,
+    OwnedMenuItem, PathPromptOptions, Pixels, Platform, PlatformDisplay, PlatformKeyboardLayout,
     PlatformKeyboardMapper, Point, Priority, PromptBuilder, PromptButton, PromptHandle,
     PromptLevel, Render, RenderImage, RenderablePromptHandle, Reservation, ScreenCaptureSource,
     SharedString, SubscriberSet, Subscription, SvgRenderer, Task, TextRenderingMode, TextSystem,
@@ -2191,6 +2191,36 @@ impl App {
     /// Gets the menu bar for this application.
     pub fn get_menus(&self) -> Option<Vec<OwnedMenu>> {
         self.platform.get_menus()
+    }
+
+    /// Returns the action the application has associated with the given
+    /// [`OsAction`] via [`MenuItem::os_action`], if any. This lets the platform
+    /// dispatch OS-recognized commands (such as a paste triggered by the
+    /// Windows clipboard history) to the action the app declared, independent
+    /// of the user's keymap.
+    pub fn os_action(&self, os_action: OsAction) -> Option<Box<dyn Action>> {
+        fn find(items: &[OwnedMenuItem], target: OsAction) -> Option<Box<dyn Action>> {
+            for item in items {
+                match item {
+                    OwnedMenuItem::Action {
+                        action,
+                        os_action: Some(item_action),
+                        ..
+                    } if *item_action == target => return Some(action.boxed_clone()),
+                    OwnedMenuItem::Submenu(submenu) => {
+                        if let Some(action) = find(&submenu.items, target) {
+                            return Some(action);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        }
+
+        self.get_menus()?
+            .iter()
+            .find_map(|menu| find(&menu.items, os_action))
     }
 
     /// Sets the right click menu for the app icon in the dock
