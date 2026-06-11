@@ -415,8 +415,8 @@ impl Platform for WindowsPlatform {
             }
         }
 
-        // `ExitProcess` below never returns, so unhook explicitly rather than
-        // relying on drop order.
+        // `ExitProcess` below never returns, so stop the hook thread (which
+        // uninstalls the hook) explicitly rather than relying on drop order.
         drop(clipboard_history_paste_hook);
 
         self.inner

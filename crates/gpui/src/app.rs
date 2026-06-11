@@ -45,7 +45,7 @@ use crate::{
     ArenaBox, Asset, AssetSource, BackgroundExecutor, Bounds, ClipboardItem, CursorStyle,
     DispatchPhase, DisplayId, EventEmitter, FocusHandle, FocusMap, ForegroundExecutor, Global,
     KeyBinding, KeyContext, Keymap, Keystroke, LayoutId, Menu, MenuItem, OsAction, OwnedMenu,
-    OwnedMenuItem, PathPromptOptions, Pixels, Platform, PlatformDisplay, PlatformKeyboardLayout,
+    PathPromptOptions, Pixels, Platform, PlatformDisplay, PlatformKeyboardLayout,
     PlatformKeyboardMapper, Point, Priority, PromptBuilder, PromptButton, PromptHandle,
     PromptLevel, Render, RenderImage, RenderablePromptHandle, Reservation, ScreenCaptureSource,
     SharedString, SubscriberSet, Subscription, SvgRenderer, Task, TextRenderingMode, TextSystem,
@@ -627,6 +627,11 @@ pub struct App {
     pub(crate) keyboard_mapper: Rc<dyn PlatformKeyboardMapper>,
     pub(crate) global_action_listeners:
         FxHashMap<TypeId, Vec<Rc<dyn Fn(&dyn Any, DispatchPhase, &mut Self)>>>,
+    /// Maps each [`OsAction`] to the action the most recent [`Self::set_menus`]
+    /// call associated with it, so OS-dispatched commands (e.g. a Windows
+    /// clipboard-history paste) resolve without re-walking and cloning the whole
+    /// menu tree on every dispatch.
+    pub(crate) os_actions: RefCell<Vec<(OsAction, Box<dyn Action>)>>,
     pending_effects: VecDeque<Effect>,
 
     pub(crate) observers: SubscriberSet<EntityId, Handler>,
@@ -745,6 +750,7 @@ impl App {
                 keyboard_layout,
                 keyboard_mapper,
                 global_action_listeners: FxHashMap::default(),
+                os_actions: RefCell::new(Vec::new()),
                 pending_effects: VecDeque::new(),
                 pending_notifications: FxHashSet::default(),
                 pending_global_notifications: FxHashSet::default(),
@@ -2185,6 +2191,29 @@ impl App {
     /// Sets the menu bar for this application. This will replace any existing menu bar.
     pub fn set_menus(&self, menus: impl IntoIterator<Item = Menu>) {
         let menus: Vec<Menu> = menus.into_iter().collect();
+
+        // Cache the OsAction -> action mapping so `os_action` resolves without
+        // re-walking and cloning the whole menu tree on every OS-dispatched command.
+        fn collect(items: &[MenuItem], out: &mut Vec<(OsAction, Box<dyn Action>)>) {
+            for item in items {
+                match item {
+                    MenuItem::Action {
+                        action,
+                        os_action: Some(os_action),
+                        ..
+                    } => out.push((*os_action, action.boxed_clone())),
+                    MenuItem::Submenu(submenu) => collect(&submenu.items, out),
+                    _ => {}
+                }
+            }
+        }
+        let mut os_actions = self.os_actions.borrow_mut();
+        os_actions.clear();
+        for menu in &menus {
+            collect(&menu.items, &mut os_actions);
+        }
+        drop(os_actions);
+
         self.platform.set_menus(menus, &self.keymap.borrow());
     }
 
@@ -2199,28 +2228,11 @@ impl App {
     /// Windows clipboard history) to the action the app declared, independent
     /// of the user's keymap.
     pub fn os_action(&self, os_action: OsAction) -> Option<Box<dyn Action>> {
-        fn find(items: &[OwnedMenuItem], target: OsAction) -> Option<Box<dyn Action>> {
-            for item in items {
-                match item {
-                    OwnedMenuItem::Action {
-                        action,
-                        os_action: Some(item_action),
-                        ..
-                    } if *item_action == target => return Some(action.boxed_clone()),
-                    OwnedMenuItem::Submenu(submenu) => {
-                        if let Some(action) = find(&submenu.items, target) {
-                            return Some(action);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            None
-        }
-
-        self.get_menus()?
+        self.os_actions
+            .borrow()
             .iter()
-            .find_map(|menu| find(&menu.items, os_action))
+            .find(|(action, _)| *action == os_action)
+            .map(|(_, action)| action.boxed_clone())
     }
 
     /// Sets the right click menu for the app icon in the dock

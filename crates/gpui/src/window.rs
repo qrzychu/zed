@@ -4551,13 +4551,11 @@ impl Window {
             // action the application registered as `OsAction::Paste` directly to the
             // focused element, so this works regardless of the user's keymap.
             PlatformInput::Paste => {
-                let propagate = match cx.os_action(OsAction::Paste) {
-                    Some(action) => {
-                        self.dispatch_action(action, cx);
-                        false
-                    }
-                    None => true,
-                };
+                let action = cx.os_action(OsAction::Paste);
+                let propagate = action.is_none();
+                if let Some(action) = action {
+                    self.dispatch_action(action, cx);
+                }
                 return DispatchEventResult {
                     propagate,
                     default_prevented: self.default_prevented,

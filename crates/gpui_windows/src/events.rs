@@ -744,6 +744,11 @@ impl WindowsWindowInner {
     fn handle_activate_msg(self: &Rc<Self>, wparam: WPARAM) -> Option<isize> {
         let activated = wparam.loword() > 0;
 
+        // Keep the clipboard-history keyboard hook installed only while Zed is
+        // focused, so the global low-level hook stays out of the system-wide input
+        // path while Zed is in the background.
+        set_clipboard_history_hook_focus(activated);
+
         let events = self
             .state
             .a11y
